@@ -185,6 +185,9 @@ namespace blockers {
         }
 
         adblock_parser_ = new adblock::Engine();
+        adblock_parser_->addTag(brave_shields::kFacebookEmbeds);
+        adblock_parser_->addTag(brave_shields::kTwitterEmbeds);
+
         if (!adblock_parser_->deserialize((char*)&adblock_buffer_.front(), adblock_buffer_.size())) {
             delete adblock_parser_;
             adblock_parser_ = nullptr;
@@ -192,8 +195,7 @@ namespace blockers {
 
             return false;
         }
-        adblock_parser_->addTag(brave_shields::kFacebookEmbeds);
-        adblock_parser_->addTag(brave_shields::kTwitterEmbeds);
+
         set_adblock_initialized();
         return true;
     }
@@ -222,6 +224,8 @@ namespace blockers {
             }
 
             adblock::Engine* parser = new adblock::Engine();
+            parser->addTag(brave_shields::kFacebookEmbeds);
+            parser->addTag(brave_shields::kTwitterEmbeds);
             if (!parser) {
                 adblock_regional_buffer_.erase(adblock_regional_buffer_.begin() + adblock_regional_buffer_.size() - 1);
                 continue;
@@ -350,15 +354,24 @@ namespace blockers {
 
         std::string host = GURL(url).host();
         std::string tab_host = GURL(tab_url).host();
-        bool is_third_party = !base::StringPiece(host).ends_with(tab_host);
+        bool is_third_party = !net::registry_controlled_domains::SameDomainOrHost(GURL(url),
+            url::Origin::CreateFromNormalizedTuple("https", tab_host.c_str(), 80),
+            net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
         std::string string_resource_type = ResourceTypeToString((content::ResourceType)resource_type);
         bool cancel;
         bool saved_from_exception;
         std::string redirect;
         if (adblock_parser_->matches(url, host, tab_host, is_third_party, string_resource_type,
                 &cancel, &saved_from_exception, &redirect)) {
+            LOG(INFO) << "Engine::matches: " <<
+                "url: " << url <<
+                ", host: " << host <<
+                ", tab_host: " << tab_host <<
+                ", is_third_party: " << is_third_party <<
+                ", resource_type: " << string_resource_type;
             return true;
         }
+        if (saved_from_exception) return false;
 
         // Check regional ad block
         if (!isAdBlockRegionalEnabled || !isAdBlockerRegionalInitialized()) {
@@ -369,6 +382,7 @@ namespace blockers {
                     &cancel, &saved_from_exception, &redirect)) {
                 return true;
             }
+            if (saved_from_exception) return false;
         }
         //
 
